@@ -76,9 +76,3 @@ Para executar a aplicação localmente, siga os passos abaixo.
     ```
 
 A aplicação será iniciada e estará acessível no seu navegador web local.
-
------
-
-## 📄 Licença
-
-Este projeto é distribuído sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
