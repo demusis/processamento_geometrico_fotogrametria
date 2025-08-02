@@ -14,6 +14,7 @@ Este módulo é projetado para corrigir distorções radiais (em barril ou almof
 
   * **Ajuste Manual:** Controle preciso dos coeficientes de distorção radial de 3ª ordem ($k\_1, k\_2, k\_3$) através de *sliders* interativos.
   * **Otimização Automática:** Capacidade de desenhar linhas de referência sobre feições da imagem que deveriam ser retas. Um otimizador numérico (`optim`) calcula os parâmetros $k$ que melhor retificam as linhas desenhadas, propondo uma correção automática.
+  * **Gestão de Pontos:** Os conjuntos de polilinhas podem ser salvos em um arquivo `.rds` e carregados posteriormente para reaplicar a mesma transformação.
 
 ### 2\. Análise Comparativa
 
