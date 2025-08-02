@@ -1,4 +1,4 @@
-# Sistema de Retificação e Análise Comparativa para Fotogrametria (SRAC)
+# Sistema de Retificação e Análise Comparativa para Fotogrametria
 
 SRAC é uma aplicação web interativa, desenvolvida em **R/Shiny**, que oferece um conjunto de ferramentas para a correção geométrica e análise visual de imagens, com foco em tarefas de pré-processamento para fotogrametria.
 
