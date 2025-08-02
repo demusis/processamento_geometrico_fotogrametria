@@ -1,70 +1,83 @@
-# Corretor Manual de Distorção de Lente
+# Sistema de Retificação e Análise Comparativa para Fotogrametria (SRAC)
 
-Aplicação em R e Shiny desenvolvida para a correção interativa de distorções radiais em imagens digitais. A ferramenta permite que o utilizador ajuste manualmente os coeficientes de distorção e visualize o resultado em tempo real, sendo útil em áreas como fotografia e fotogrametria onde a precisão geométrica da imagem é necessária.
+SRAC é uma aplicação web interativa, desenvolvida em **R/Shiny**, que oferece um conjunto de ferramentas para a correção geométrica e análise visual de imagens, com foco em tarefas de pré-processamento para fotogrametria.
 
----
+-----
 
 ## Funcionalidades
 
-* **Carregamento de Imagem**: Suporte para arquivos nos formatos `PNG` e `JPEG`.
-* **Ajuste Interativo**: Controlo preciso sobre os três primeiros coeficientes de distorção radial ($k_1, k_2, k_3$) através de controlos deslizantes (*sliders*).
-* **Pré-visualização Otimizada**: A manipulação é realizada sobre uma pré-visualização da imagem (com largura máxima de 1200 pixels) para garantir a fluidez da interface.
-* **Processamento em Resolução Total**: A imagem final é processada com a resolução original no momento do download para assegurar a máxima qualidade.
-* **Reinicialização de Parâmetros**: Um botão permite reverter todos os coeficientes aos seus valores iniciais (zero).
-* **Documentação Integrada**: *Tooltips* informativos explicam o fundamento técnico e o efeito de cada coeficiente de distorção.
+A aplicação é organizada em três módulos principais, cada um focado em uma tarefa específica de processamento de imagem.
 
----
+### 1\. Correção de Distorção de Lente
 
-## Demonstração
+Este módulo é projetado para corrigir distorções radiais (em barril ou almofada) comumente introduzidas por lentes de câmeras. Oferece dois modos de operação:
 
-A interface do utilizador é composta por um painel lateral para o carregamento do ficheiro e ajuste dos parâmetros, e um painel principal que exibe a imagem corrigida.
+  * **Ajuste Manual:** Controle preciso dos coeficientes de distorção radial de 3ª ordem ($k\_1, k\_2, k\_3$) através de *sliders* interativos.
+  * **Otimização Automática:** Capacidade de desenhar linhas de referência sobre feições da imagem que deveriam ser retas. Um otimizador numérico (`optim`) calcula os parâmetros $k$ que melhor retificam as linhas desenhadas, propondo uma correção automática.
 
----
+### 2\. Análise Comparativa
 
-## Detalhes Técnicos
+Uma ferramenta para a inspeção visual e comparação de duas imagens lado a lado. É ideal para verificar o resultado de correções ou comparar imagens de diferentes épocas ou sensores.
 
-A correção da distorção é fundamentada no modelo polinomial de Brown-Conrady, que descreve o desvio dos pontos da imagem em função da sua distância ao centro ótico. A aplicação utiliza a função `image_distort` do pacote `magick`, implementando a correção para a distorção radial através da seguinte fórmula:
+  * **Divisor Interativo:** Um *slider* que move uma linha divisória sobre as imagens, permitindo uma comparação detalhada de áreas específicas.
+  * **Anotações:** Adição de legendas personalizáveis em ambos os lados da imagem, com controle de fonte, cor e posição.
 
-$$
-\mathbf{x}_{u} = \mathbf{x}_{d} \cdot (1 + k_1 r^2 + k_2 r^4 + k_3 r^6)
-$$
+### 3\. Correção por Pontos de Controle (TPS)
 
-Onde:
-- $\mathbf{x}_{u}$ representa as coordenadas do ponto corrigido (não distorcido).
-- $\mathbf{x}_{d}$ representa as coordenadas do ponto na imagem original (distorcida).
-- $r$ é a distância radial do ponto ao centro da imagem.
-- $k_1, k_2, k_3$ são os coeficientes de distorção radial ajustados pelo utilizador:
-    - **$k_1$**: Coeficiente de primeira ordem, principal responsável pela correção da **distorção de barril** (*barrel distortion*), comum em lentes grande-angulares, e da **distorção de almofada** (*pincushion distortion*), observada em teleobjetivas.
-    - **$k_2$**: Coeficiente de segunda ordem, utilizado para ajustes finos em curvaturas não perfeitamente parabólicas.
-    - **$k_3$**: Coeficiente de terceira ordem, que permite corrigir distorções complexas como a **distorção em bigode** (*mustache distortion*), onde a curvatura das linhas se inverte próximo às bordas.
+Para distorções complexas e não radiais, este módulo utiliza a interpolação **Thin Plate Spline (TPS)**. O usuário pode corrigir deformações geométricas arbitrárias.
 
-Para otimizar a performance, a aplicação utiliza um *debounce timer* de 500 ms, atualizando a pré-visualização somente após o utilizador pausar o ajuste dos *sliders*.
+  * **Desenho de Vetores de Correção:** O usuário desenha polilinhas sobre feições distorcidas; o sistema as interpreta como vetores que mapeiam a geometria distorcida para uma geometria corrigida e retilínea.
+  * **Gestão de Pontos:** Os conjuntos de polilinhas podem ser salvos em um arquivo `.rds` e carregados posteriormente para reaplicar a mesma transformação.
+  * **Controle de Suavização:** Um parâmetro de regularização (λ) permite controlar a rigidez da transformação, evitando artefatos indesejados.
 
----
+-----
+
+## Tecnologias e Pacotes
+
+A aplicação é construída inteiramente em **R**, utilizando os seguintes pacotes para alcançar sua funcionalidade:
+
+  * **Framework:** `shiny`
+  * **Interface de Usuário:** `bslib` (para theming com Bootstrap 5)
+  * **Processamento de Imagem:** `magick` (módulos 1 e 2) e `imager` (módulo 3)
+  * **Métodos Numéricos:** `fields` (para a interpolação TPS) e `stats::optim` (para a otimização de distorção)
+  * **Utilitários:** `dplyr`, `shinycssloaders`
+
+-----
 
 ## Instalação e Execução
 
-Para executar esta aplicação localmente, são necessários o R e, preferencialmente, o RStudio.
+Para executar a aplicação localmente, siga os passos abaixo.
 
-1.  **Instalar as dependências:**
-    Abra uma sessão R no diretório do projeto e execute o comando seguinte para instalar os pacotes necessários:
-    ```r
-    install.packages(c("shiny", "magick", "shinycssloaders", "shinyBS"))
+### Pré-requisitos
+
+  * [R](https://cran.r-project.org/) (versão 4.0 ou superior)
+  * [RStudio](https://posit.co/download/rstudio-desktop/) (recomendado)
+
+### Passos
+
+1.  **Clone o repositório:**
+
+    ```bash
+    git clone [URL_DO_SEU_REPOSITÓRIO]
+    cd [NOME_DO_DIRETÓRIO]
     ```
 
-2.  **Executar a aplicação:**
-    Com o arquivo `app.R` (ou o nome correspondente) aberto no RStudio, clique em "Run App". Alternativamente, execute no console R:
+2.  **Abra o RStudio** e, no console, instale as dependências necessárias executando o comando:
+
     ```r
-    shiny::runApp()
+    install.packages(c("shiny", "magick", "colourpicker", "shinycssloaders", "bslib", "imager", "dplyr", "fields"))
     ```
 
----
+3.  **Execute a aplicação:**
 
-## Dependências
+    ```r
+    shiny::runApp('app.R')
+    ```
 
-O projeto depende dos seguintes pacotes R:
+A aplicação será iniciada e estará acessível no seu navegador web local.
 
-* `shiny`: Framework para a criação de aplicações web.
-* `magick`: Interface para a biblioteca de processamento de imagem ImageMagick.
-* `shinycssloaders`: Adiciona indicadores de carregamento (*spinners*) a outputs Shiny.
-* `shinyBS`: Componentes Bootstrap para Shiny, utilizados aqui para os *tooltips*.
+-----
+
+## 📄 Licença
+
+Este projeto é distribuído sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
