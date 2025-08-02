@@ -1,7 +1,6 @@
-# Título: Módulo de Processamento Geométrico para Fotogrametria
+# Título: Processamento Geométrico para Fotogrametria
 # Data: 02/08/2025
 # Autor: Carlo Ralph De Musis
-
 
 # --- Carregar Bibliotecas ---
 library(shiny)
@@ -19,27 +18,23 @@ options(shiny.maxRequestSize = 100 * 1024^2)
 
 # --- Funções Auxiliares ---
 
-# --- Função de distorção agora usa um fator de normalização ---
+# Função para aplicar distorção de barril a um conjunto de coordenadas
 distort_coords <- function(points, k_params, center_xy, norm_factor) {
   k1 <- k_params[1]
   k2 <- k_params[2]
   k3 <- k_params[3]
   
-  # Coordenadas relativas ao centro (não normalizadas)
   coords_centered <- data.frame(
     x = points$x - center_xy[1],
     y = points$y - center_xy[2]
   )
   
-  # Raio ao quadrado NORMALIZADO
   r2 <- (coords_centered$x^2 + coords_centered$y^2) / norm_factor^2
   r4 <- r2^2
   r6 <- r2^3
   
-  # Fator de distorção radial
   f <- 1 + k1 * r2 + k2 * r4 + k3 * r6
   
-  # Aplica distorção nas coordenadas centradas e retorna à escala original
   distorted_points <- data.frame(
     x = coords_centered$x * f + center_xy[1],
     y = coords_centered$y * f + center_xy[2]
@@ -82,12 +77,12 @@ royal_blue_theme_v2 <- bs_theme(
 
 # --- Interface do Usuário (UI) ---
 ui <- navbarPage(
-  "Módulo de Processamento Geométrico para Fotogrametria",
+  "Processamento Geométrico para Fotogrametria",
   theme = royal_blue_theme_v2,
   
   # --- Aba 1: Corretor de Distorção de Lente ---
   tabPanel(
-    "Corretor de Distorção de Lente",
+    "Correção de Distorção de Lente",
     icon = icon("camera-retro"),
     sidebarLayout(
       sidebarPanel(
@@ -113,6 +108,11 @@ ui <- navbarPage(
                 actionButton("dist_btn_clear_all", "Limpar Todas", icon = icon("broom"))
             ),
             actionButton("dist_btn_optimize", "Propor Ajuste com Linhas", icon = icon("cogs"), class = "btn-primary"),
+            # --- MODIFICADO: Adicionada gestão de linhas de referência ---
+            hr(),
+            p("Gestão das Linhas de Referência:"),
+            downloadButton("dist_btn_save_polylines", "Salvar Linhas"),
+            fileInput("dist_load_polylines_input", "Carregar Linhas (.rds)", accept = ".rds"),
             hr(),
             div(style = "display: flex; justify-content: space-between;",
                 actionButton("reset_all", "Reiniciar Tudo", icon = icon("refresh")),
@@ -137,9 +137,9 @@ ui <- navbarPage(
     )
   ),
   
-  # --- Aba 2: Comparador Visual de Quadros ---
+  # --- Aba 2: Combinador de Imagens ---
   tabPanel(
-    "Comparador Visual de Quadros",
+    "Análise Comparativa",
     icon = icon("layer-group"),
     sidebarLayout(
       sidebarPanel(
@@ -195,9 +195,9 @@ ui <- navbarPage(
     )
   ),
   
-  # --- Aba 3: Ajuste Geométrico por Splines ---
+  # --- Aba 3: Corretor Numérico (TPS) ---
   tabPanel(
-    "Ajuste Geométrico por Splines",
+    "Correção por Pontos de Controle",
     icon = icon("ruler-combined"),
     sidebarLayout(
       sidebarPanel(
@@ -221,8 +221,7 @@ ui <- navbarPage(
             actionButton("tps_btn_correct", "Corrigir Imagem", icon = icon("cogs"), class = "btn-primary"),
             actionButton("tps_btn_reset", "Reiniciar Desenho", icon = icon("undo")),
             hr(),
-            h5("4. Gestão e Download"),
-            p("Gestão das Linhas:"),
+            h5("4. Gestão de Pontos"),
             downloadButton("tps_btn_save_polylines", "Salvar Linhas"),
             fileInput("tps_load_polylines_input", "Carregar Linhas (.rds)", accept = ".rds"),
             hr(),
@@ -363,7 +362,6 @@ server <- function(input, output, session) {
     
     info <- image_info(vals$original_image)
     center_xy <- c(info$width / 2, info$height / 2)
-    
     norm_factor <- sqrt(info$width^2 + info$height^2) / 2
     
     error_function <- function(k_params, polylines, center, norm) {
@@ -390,7 +388,6 @@ server <- function(input, output, session) {
     initial_k <- c(input$k1, input$k2, input$k3)
     optim_result <- optim(
       par = initial_k, fn = error_function,
-      # Passa os argumentos adicionais para a função de erro
       polylines = vals$dist_polylines, center = center_xy, norm = norm_factor,
       method = "L-BFGS-B",
       lower = c(-1.5, -1.0, -0.5), upper = c(1.5, 1.0, 0.5)
@@ -407,6 +404,33 @@ server <- function(input, output, session) {
     } else {
       showNotification("A otimização não convergiu.", type="warning")
     }
+  })
+  
+  # --- MODIFICADO: Adicionada lógica de salvar/carregar linhas para a Aba 1 ---
+  output$dist_btn_save_polylines <- downloadHandler(
+    filename = function() { "linhas_referencia_distorcao.rds" },
+    content = function(file) {
+      if (length(vals$dist_polylines) == 0) {
+        showNotification("Não há linhas finalizadas para salvar.", type = "warning")
+        return(NULL)
+      }
+      saveRDS(vals$dist_polylines, file)
+    }
+  )
+  
+  observeEvent(input$dist_load_polylines_input, {
+    req(input$dist_load_polylines_input$datapath)
+    tryCatch({
+      loaded_polylines <- readRDS(input$dist_load_polylines_input$datapath)
+      if (is.list(loaded_polylines)) {
+        vals$dist_polylines <- loaded_polylines
+        showNotification("Linhas de referência carregadas com sucesso.", type = "message")
+      } else {
+        showNotification("Arquivo inválido. O ficheiro deve ser uma lista de polilinhas salva em formato .rds.", type = "error")
+      }
+    }, error = function(e) {
+      showNotification(paste("Erro ao carregar o ficheiro:", e$message), type = "error")
+    })
   })
   
   output$save_image <- downloadHandler(
