@@ -58,11 +58,6 @@ Para executar a aplicação localmente, siga os passos abaixo.
 
 1.  **Clone o repositório:**
 
-    ```bash
-    git clone [URL_DO_SEU_REPOSITÓRIO]
-    cd [NOME_DO_DIRETÓRIO]
-    ```
-
 2.  **Abra o RStudio** e, no console, instale as dependências necessárias executando o comando:
 
     ```r
