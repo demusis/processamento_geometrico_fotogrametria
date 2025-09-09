@@ -1,6 +1,7 @@
 # Título: Processamento Geométrico para Fotogrametria
-# Data: 02/08/2025
+# Data: 09/09/2025
 # Autor: Carlo Ralph De Musis
+# Versão Modificada: 09/09/2025
 
 # --- Carregar Bibliotecas ---
 library(shiny)
@@ -99,6 +100,7 @@ ui <- navbarPage(
             sliderInput("k1", label = tags$label("k₁:", bslib::tooltip(shiny::icon("question-circle"), "Coeficiente de 1ª ordem.", placement = "right")), min = -1.5, max = 1.5, value = 0, step = 0.001),
             sliderInput("k2", label = tags$label("k₂:", bslib::tooltip(shiny::icon("question-circle"), "Coeficiente de 2ª ordem.", placement = "right")), min = -1.0, max = 1.0, value = 0, step = 0.001),
             sliderInput("k3", label = tags$label("k₃:", bslib::tooltip(shiny::icon("question-circle"), "Coeficiente de 3ª ordem.", placement = "right")), min = -0.5, max = 0.5, value = 0, step = 0.001),
+            actionButton("dist_btn_apply_manual", "Aplicar Correção", icon = icon("play"), class = "btn-success", style = "width: 100%; margin-top: 10px;"),
             hr(),
             h5("3. Otimização Automática"),
             p("Com os sliders em zero, desenhe linhas sobre feições retas. Após, clique em 'Propor Ajuste'.", style = "font-size: 0.9em;"),
@@ -108,7 +110,6 @@ ui <- navbarPage(
                 actionButton("dist_btn_clear_all", "Limpar Todas", icon = icon("broom"))
             ),
             actionButton("dist_btn_optimize", "Propor Ajuste com Linhas", icon = icon("cogs"), class = "btn-primary"),
-            # --- MODIFICADO: Adicionada gestão de linhas de referência ---
             hr(),
             p("Gestão das Linhas de Referência:"),
             downloadButton("dist_btn_save_polylines", "Salvar Linhas"),
@@ -174,6 +175,7 @@ ui <- navbarPage(
                           selected = "bottom"),
               
               hr(),
+              actionButton("comb_btn_update", "Atualizar Visualização", icon = icon("sync"), class = "btn-primary", style = "width: 100%; margin-bottom: 10px;"),
               downloadButton("save_combined_image", "Salvar Imagem", icon = icon("save"))
             )
           )
@@ -253,6 +255,7 @@ server <- function(input, output, session) {
   
   vals <- reactiveValues(
     original_image = NULL,
+    image_to_display = NULL, # Armazena a imagem (original ou corrigida) a ser exibida
     dist_polylines = list(),
     dist_current_poly = data.frame(x = numeric(), y = numeric())
   )
@@ -260,6 +263,7 @@ server <- function(input, output, session) {
   observeEvent(input$userImage, {
     req(input$userImage)
     vals$original_image <- magick::image_read(input$userImage$datapath)
+    vals$image_to_display <- vals$original_image # Define a imagem inicial para exibição
     reset_all_dist()
   })
   
@@ -270,6 +274,9 @@ server <- function(input, output, session) {
     updateSliderInput(session, "dist_zoom", value = 1)
     vals$dist_polylines <- list()
     vals$dist_current_poly <- data.frame(x = numeric(), y = numeric())
+    if (!is.null(vals$original_image)) {
+      vals$image_to_display <- vals$original_image # Reseta a imagem de exibição
+    }
   }
   
   observeEvent(input$reset_all, {
@@ -293,19 +300,30 @@ server <- function(input, output, session) {
     )
   })
   
-  output$dist_plot <- renderPlot({
+  observeEvent(input$dist_btn_apply_manual, {
     req(vals$original_image)
-    
     k_params <- c(input$k1, input$k2, input$k3)
-    is_drawing_mode <- all(k_params == 0)
     
-    image_to_display_magick <- if(is_drawing_mode){
-      vals$original_image
+    if (all(k_params == 0)) {
+      vals$image_to_display <- vals$original_image
     } else {
-      image_distort(vals$original_image, 'barrel', c(-k_params[1], -k_params[2], -k_params[3]), bestfit = TRUE)
+      vals$image_to_display <- image_distort(
+        vals$original_image, 'barrel',
+        c(-k_params[1], -k_params[2], -k_params[3]),
+        bestfit = TRUE
+      )
     }
+    showNotification("Correção aplicada.", type = "message")
+  })
+  
+  output$dist_plot <- renderPlot({
+    req(vals$image_to_display)
     
-    plot(image_to_display_magick, axes = FALSE, ann = FALSE)
+    plot(vals$image_to_display, axes = FALSE, ann = FALSE)
+    
+    # A verificação dos sliders foi encapsulada em isolate()
+    # para que a alteração deles não dispare a re-renderização do plot.
+    is_drawing_mode <- isolate(all(c(input$k1, input$k2, input$k3) == 0))
     
     if (is_drawing_mode) {
       for (poly in vals$dist_polylines) {
@@ -396,7 +414,7 @@ server <- function(input, output, session) {
     removeNotification("optim_msg")
     
     if(optim_result$convergence == 0){
-      showNotification("Otimização concluída com sucesso.", type="message")
+      showNotification("Otimização concluída. Clique em 'Aplicar Correção' para ver o resultado.", type="message")
       updateSliderInput(session, "k1", value = optim_result$par[1])
       updateSliderInput(session, "k2", value = optim_result$par[2])
       updateSliderInput(session, "k3", value = optim_result$par[3])
@@ -406,7 +424,6 @@ server <- function(input, output, session) {
     }
   })
   
-  # --- MODIFICADO: Adicionada lógica de salvar/carregar linhas para a Aba 1 ---
   output$dist_btn_save_polylines <- downloadHandler(
     filename = function() { "linhas_referencia_distorcao.rds" },
     content = function(file) {
@@ -439,47 +456,43 @@ server <- function(input, output, session) {
       paste0(original_filename, "_dist-corrigida.png")
     },
     content = function(file) {
-      req(vals$original_image)
-      k_params <- c(-input$k1, -input$k2, -input$k3)
-      final_image <- image_distort(vals$original_image, 'barrel', k_params, bestfit = TRUE)
-      image_write(final_image, path = file, format = 'png')
+      req(vals$image_to_display)
+      image_write(vals$image_to_display, path = file, format = 'png')
     }
   )
   
   # --- Lógica do Combinador de Imagens (Aba 2) ---
   
-  img1_reactive <- reactive({ req(input$file1); magick::image_read(input$file1$datapath) })
-  img2_reactive <- reactive({ req(input$file2); magick::image_read(input$file2$datapath) })
-  output$combiner_images_loaded <- reactive({ !is.null(input$file1) && !is.null(input$file2) })
-  outputOptions(output, "combiner_images_loaded", suspendWhenHidden = FALSE)
-  observeEvent(c(input$file1, input$file2), {
-    req(img1_reactive(), img2_reactive())
-    info1 <- magick::image_info(img1_reactive()); info2 <- magick::image_info(img2_reactive())
-    if (info1$width != info2$width || info1$height != info2$height) {
-      showNotification("As imagens não possuem as mesmas dimensões.", type = "error", duration = 8)
-    }
-    updateSliderInput(session, "comb_zoom", value = 1)
-  })
-  generate_combined_image <- reactive({
-    req(img1_reactive(), img2_reactive(), input$split_position, input$line_thickness >= 0)
-    img1 <- img1_reactive(); img2 <- img2_reactive()
+  comb_vals <- reactiveValues(
+    img1 = NULL,
+    img2 = NULL,
+    img_to_display = NULL
+  )
+  
+  calculate_and_combine_image <- function() {
+    req(comb_vals$img1, comb_vals$img2, input$split_position, input$line_thickness >= 0)
+    
+    img1 <- comb_vals$img1; img2 <- comb_vals$img2
     info <- magick::image_info(img1)
     img_w <- info$width; img_h <- info$height
     split_pos_px <- as.integer(round((input$split_position / 100) * img_w))
     line_thick <- as.integer(input$line_thickness)
     line_col <- input$line_color
     vertical_pos <- input$caption_gravity_y
+    
     switch(vertical_pos,
            "top"    = { gravity_left <- "northwest"; gravity_right <- "northeast" },
            "center" = { gravity_left <- "west";      gravity_right <- "east" },
            "bottom" = { gravity_left <- "southwest"; gravity_right <- "southeast" }
     )
+    
     if (input$split_position > 0 && input$split_position < 100) {
       geom_left <- sprintf("%dx%d+0+0", split_pos_px, img_h)
       img_left <- magick::image_crop(img1, geom_left)
       geom_right <- sprintf("%dx%d+%d+0", (img_w - split_pos_px), img_h, split_pos_px)
       img_right <- magick::image_crop(img2, geom_right)
       base_image <- magick::image_append(c(img_left, img_right))
+      
       if (line_thick > 0) {
         divider <- magick::image_blank(width = line_thick, height = img_h, color = line_col)
         offset_string <- sprintf("+%d+0", (split_pos_px - round(line_thick / 2)))
@@ -487,6 +500,7 @@ server <- function(input, output, session) {
       } else {
         intermediate_img <- base_image
       }
+      
       final_img <- intermediate_img
       if (!is.null(input$caption_left) && input$caption_left != "") {
         final_img <- magick::image_annotate(final_img, input$caption_left, gravity = gravity_left, location = "+10+5", size = input$caption_size, color = input$caption_color)
@@ -506,15 +520,45 @@ server <- function(input, output, session) {
       }
     }
     return(final_img)
+  }
+  
+  observeEvent(c(input$file1, input$file2), {
+    req(input$file1, input$file2)
+    
+    img1 <- magick::image_read(input$file1$datapath)
+    img2 <- magick::image_read(input$file2$datapath)
+    info1 <- magick::image_info(img1); info2 <- magick::image_info(img2)
+    
+    if (info1$width != info2$width || info1$height != info2$height) {
+      showNotification("As imagens não possuem as mesmas dimensões.", type = "error", duration = 8)
+      comb_vals$img_to_display <- NULL
+    } else {
+      comb_vals$img1 <- img1
+      comb_vals$img2 <- img2
+      comb_vals$img_to_display <- calculate_and_combine_image()
+    }
+    updateSliderInput(session, "comb_zoom", value = 1)
   })
+  
+  observeEvent(input$comb_btn_update, {
+    comb_vals$img_to_display <- calculate_and_combine_image()
+    showNotification("Visualização atualizada.", type = "message")
+  })
+  
+  output$combiner_images_loaded <- reactive({ !is.null(input$file1) && !is.null(input$file2) })
+  outputOptions(output, "combiner_images_loaded", suspendWhenHidden = FALSE)
+  
   output$comb_image_container_ui <- renderUI({
     req(input$file1, input$file2)
     div(style = "width: 100%; height: 700px; overflow: auto; border: 1px solid #ddd;",
         imageOutput("combined_image", height = "auto")
     )
   })
+  
   output$combined_image <- renderImage({
-    final_img <- generate_combined_image()
+    req(comb_vals$img_to_display)
+    
+    final_img <- comb_vals$img_to_display
     tmpfile <- magick::image_write(final_img, tempfile(fileext = '.png'), format = 'png')
     
     zoom_level <- if(is.null(input$comb_zoom)) 1 else input$comb_zoom
@@ -524,13 +568,14 @@ server <- function(input, output, session) {
          height = "auto", 
          alt = "Imagem combinada")
   }, deleteFile = TRUE)
+  
   output$save_combined_image <- downloadHandler(
     filename = function() {
       paste0("imagem_combinada_com_legenda_", Sys.Date(), ".png")
     },
     content = function(file) {
-      final_img_to_save <- generate_combined_image()
-      magick::image_write(final_img_to_save, path = file, format = 'png')
+      req(comb_vals$img_to_display)
+      magick::image_write(comb_vals$img_to_display, path = file, format = 'png')
     }
   )
   
